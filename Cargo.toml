@@ -1,0 +1,6 @@
+[package]
+name = "simple-db"
+version = "0.1.0"
+authors = ["whossname <tyson.buzza@gmail.com>"]
+
+[dependencies]

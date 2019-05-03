@@ -3,6 +3,8 @@ extern crate rustyline;
 use repl::rustyline::error::ReadlineError;
 use repl::rustyline::Editor;
 
+use sql;
+
 pub fn run() {
     // `()` can be used when no completer is required
     let mut rl = Editor::<()>::new();
@@ -40,7 +42,7 @@ fn evaluate_line(user_input: &String) {
     if first_char == '.' { 
         do_meta(user_input);
     } else { 
-        run_sql(user_input);
+        sql::parse(user_input);
     };
 }
 
@@ -50,16 +52,6 @@ fn do_meta(user_input: &String) {
         },
         _ => {
             println!("Unknown meta command: {}\n", user_input.clone())
-        },
-    }
-}
-
-fn run_sql(user_input: &String) {
-    match user_input.as_ref() {
-        "" => {
-        },
-        _ => {
-            println!("Invalid SQL: {}\n", user_input.clone())
         },
     }
 }

@@ -1,3 +1,5 @@
+extern crate rustyline;
+
 mod repl;
 mod sql;
 

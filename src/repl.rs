@@ -1,7 +1,5 @@
-extern crate rustyline;
-
-use repl::rustyline::error::ReadlineError;
-use repl::rustyline::Editor;
+use rustyline::error::ReadlineError;
+use rustyline::Editor;
 
 use sql;
 

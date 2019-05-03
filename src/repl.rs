@@ -1,7 +1,7 @@
 extern crate rustyline;
 
-use rustyline::error::ReadlineError;
-use rustyline::Editor;
+use repl::rustyline::error::ReadlineError;
+use repl::rustyline::Editor;
 
 pub fn run() {
     // `()` can be used when no completer is required
@@ -12,14 +12,11 @@ pub fn run() {
     loop {
         let readline = rl.readline(">> ");
         match readline {
-            Ok(cmd) => {
-                let first_char = cmd.chars().next().unwrap();
-                if first_char == "." { 
-                    do_meta(cmd.clone());
-                } else { 
-                    run_cmd(cmd.clone());
-                };
-                rl.add_history_entry(cmd);
+            Ok(user_input) => {
+                if user_input.len() > 0 {
+                    evaluate_line(&user_input);
+                    rl.add_history_entry(user_input);
+                }
             }
             Err(ReadlineError::Interrupted) => {
                 println!("CTRL-C");
@@ -38,22 +35,31 @@ pub fn run() {
     rl.save_history("history.txt").unwrap();
 }
 
-fn do_meta(cmd: String) {
-    match cmd.as_ref() {
+fn evaluate_line(user_input: &String) {
+    let first_char = user_input.chars().next().unwrap();
+    if first_char == '.' { 
+        do_meta(user_input);
+    } else { 
+        run_sql(user_input);
+    };
+}
+
+fn do_meta(user_input: &String) {
+    match user_input.as_ref() {
         "" => {
         },
         _ => {
-            println!("Unknown command: {}\n", cmd.clone())
+            println!("Unknown meta command: {}\n", user_input.clone())
         },
     }
 }
 
-fn run_cmd(cmd: String) {
-    match cmd.as_ref() {
+fn run_sql(user_input: &String) {
+    match user_input.as_ref() {
         "" => {
         },
         _ => {
-            println!("Unknown command: {}\n", cmd.clone())
+            println!("Invalid SQL: {}\n", user_input.clone())
         },
     }
 }

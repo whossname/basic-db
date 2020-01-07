@@ -13,9 +13,19 @@ pub fn run() {
         let readline = rl.readline(">> ");
         match readline {
             Ok(user_input) => {
-                if user_input.len() > 0 {
-                    evaluate_line(&user_input);
-                    rl.add_history_entry(user_input);
+                let first_char = user_input.chars().next();
+                match first_char {
+                    None => {}
+
+                    Some('.') => {
+                        do_meta(&user_input);
+                        rl.add_history_entry(user_input);
+                    }
+
+                    Some(_) => {
+                        sql::parse(&user_input);
+                        rl.add_history_entry(user_input);
+                    }
                 }
             }
             Err(ReadlineError::Interrupted) => {
@@ -35,21 +45,9 @@ pub fn run() {
     rl.save_history("history.txt").unwrap();
 }
 
-fn evaluate_line(user_input: &String) {
-    let first_char = user_input.chars().next().unwrap();
-    if first_char == '.' { 
-        do_meta(user_input);
-    } else { 
-        sql::parse(user_input);
-    };
-}
-
 fn do_meta(user_input: &String) {
     match user_input.as_ref() {
-        "" => {
-        },
-        _ => {
-            println!("Unknown meta command: {}\n", user_input.clone())
-        },
+        "" => {}
+        _ => println!("Unknown meta command: {}\n", user_input.clone()),
     }
 }

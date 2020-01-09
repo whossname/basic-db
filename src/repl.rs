@@ -3,6 +3,11 @@ use rustyline::Editor;
 
 use sql;
 
+enum ReplState {
+    Continue,
+    Exit,
+}
+
 pub fn run() {
     // `()` can be used when no completer is required
     let mut rl = Editor::<()>::new();
@@ -12,22 +17,12 @@ pub fn run() {
     loop {
         let readline = rl.readline(">> ");
         match readline {
-            Ok(user_input) => {
-                let first_char = user_input.chars().next();
-                match first_char {
-                    None => {}
-
-                    Some('.') => {
-                        do_meta(&user_input);
-                        rl.add_history_entry(user_input);
-                    }
-
-                    Some(_) => {
-                        sql::parse(&user_input);
-                        rl.add_history_entry(user_input);
-                    }
+            Ok(val) => match user_input(val, &mut rl) {
+                ReplState::Exit => {
+                    return;
                 }
-            }
+                ReplState::Continue => {}
+            },
             Err(ReadlineError::Interrupted) => {
                 println!("CTRL-C");
                 break;
@@ -45,9 +40,30 @@ pub fn run() {
     rl.save_history("history.txt").unwrap();
 }
 
-fn do_meta(user_input: &String) {
+fn user_input(line: String, rl: &mut Editor<()>) -> ReplState {
+    let first_char = line.chars().next();
+    match first_char {
+        None => ReplState::Continue,
+
+        Some('.') => {
+            rl.add_history_entry(&line);
+            do_meta(&line)
+        }
+
+        Some(_) => {
+            rl.add_history_entry(&line);
+            sql::parse(&line);
+            ReplState::Continue
+        }
+    }
+}
+
+fn do_meta(user_input: &String) -> ReplState {
     match user_input.as_ref() {
-        "" => {}
-        _ => println!("Unknown meta command: {}\n", user_input.clone()),
+        ".exit" => ReplState::Exit,
+        _ => {
+            println!("Unknown meta command: {}\n", user_input.clone());
+            ReplState::Continue
+        }
     }
 }

@@ -3,7 +3,7 @@ use std::fmt;
 use std::num;
 use std::str::SplitWhitespace;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct SqlError;
 
 impl fmt::Display for SqlError {
@@ -20,7 +20,7 @@ impl error::Error for SqlError {
 }
 
 impl From<num::ParseIntError> for SqlError {
-    fn from(err: num::ParseIntError) -> SqlError {
+    fn from(_err: num::ParseIntError) -> SqlError {
         SqlError
     }
 }
@@ -75,10 +75,6 @@ fn parse_insert(sql: &mut SplitWhitespace) -> Result<(), SqlError> {
     Ok(())
 }
 
-fn parse_columns() {}
-
-fn parse_select(sql: &SplitWhitespace) -> Result<(), SqlError> {
+fn parse_select(_sql: &SplitWhitespace) -> Result<(), SqlError> {
     Ok(())
 }
-
-fn parse_int() {}

@@ -48,14 +48,14 @@ removes the need to the sqlite_sequence table.
 
 The file format design is heavily influenced by the [SQLite format](https://www.sqlite.org/fileformat.html). Based of the descisions made above the following secions are relevant:
 
-1. The Database File
-   1.2. Pages
-   1.3. The Database Header
-   1.3.2. Page Size
-   1.3.7. In-header database size
-   1.6. B-tree Pages
+1. The Database File  
+   1.2. Pages  
+   1.3. The Database Header  
+   &nbsp; &nbsp; 1.3.2. Page Size  
+   &nbsp; &nbsp; 1.3.7. In-header database size  
+   1.6. B-tree Pages  
    1.7. Cell Payload Overflow Pages
-2. Schema Layer
-   2.1. Record Format
-   2.3. Representation Of SQL Tables
+2. Schema Layer  
+   2.1. Record Format  
+   2.3. Representation Of SQL Tables  
    2.6. Storage Of The SQL Database Schema _(details on the master table)_

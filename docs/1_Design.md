@@ -31,18 +31,20 @@ For now we will not implement the following features:
 - indexes
 - freelists (for deleting data)
 - file locks/change counters (for concurrency)
-- pointer maps (for vacuming)
+- pointer maps (for vacuuming, only makes sense once deleting is implemented)
 - versioning numbers and file validation checks
 - the sqlite_sequence table
 - the sqlite_stat tables
+- page reserved regions
 
 We also don't need the SQLite legacy features such as the lock-byte page and
-several of the header fields.
+several of the database header fields.
 
-Finally the B\*-Tree implementaion for tables will be simplified by including an
-"id" field in every table to act as the primary key and be stored in the master
-table. This simplifies the record sort order and auto increment features. This
-removes the need to the sqlite_sequence table.
+Finally the B\*-Tree implementaion for tables will be simplified by including a
+64-bit unsigned integer "id" field in every table to act as the primary key.
+The autoincrement value for this id field will be stored in the master table.
+This simplifies the record sort order and auto increment feature,
+removeing the need for the sqlite_sequence table.
 
 ## Database File Format
 
@@ -58,4 +60,117 @@ The file format design is heavily influenced by the [SQLite format](https://www.
 2. Schema Layer  
    2.1. Record Format  
    2.3. Representation Of SQL Tables  
-   2.6. Storage Of The SQL Database Schema _(details on the master table)_
+   2.6. Storage Of The SQL Database Schema _(includes details on the master table)_
+
+All data is stored in the big-endian layout.
+
+### Header
+
+The first 100 bytes of the SQLite database file comprise the database file
+header. This if far more than what we need for our database. SQLite doesn't
+use all of this space, the remainder is reserved for expansion. We will adopt
+the same design. The following is the header design we will use for our database:
+
+| Offest | Size | Description                        |
+| ------ | ---- | ---------------------------------- |
+| 0      | 2    | The database page size in bytes    |
+| 2      | 4    | Size of the database file in pages |
+| 6      | 94   | Reserved for expansion             |
+
+Our header is very small because of all of the features we have removed.
+The SQLite header only has 20 bytes reserved for expansion compared to our 94.
+
+When the database is first opened, the first 100 bytes of the database file (the database file header) are read as a sub-page size unit. The header is stored as
+part of Page 1 of the database.
+
+### Tables
+
+### B-tree Pages
+
+Only three pages need to be implemented for our basic database:
+
+- A table b-tree interior page
+- A table b-tree leaf page
+- A payload overflow page
+
+Pages are numbered beginning with 1. Page 1 is always the first page of the
+master table. Page 1 includes the database file header.
+
+A b-tree page is divided into regions in the following order:
+
+1. The 100-byte database file header (found on page 1 only, described above)
+2. The 8 or 12 byte b-tree page header
+3. The cell pointer array
+4. Unallocated space
+5. The cell content area
+
+#### Page Header
+
+The following is the structure of the page header. Note that freeblocks and
+fragmented byte counters are no implemented as we are not implementing the
+delete functionality in our database.
+
+| Offset | Size | Description                                                    |
+| ------ | ---- | -------------------------------------------------------------- |
+| 0      | 1    | Page type                                                      |
+| 1      | 2    | First freeblock on the page (not implemented)                  |
+| 3      | 2    | Number of cells on the page                                    |
+| 5      | 2    | Start of the cell content area                                 |
+| 7      | 1    | Number of cell content fragmented free bytes (not implemented) |
+| 8      | 4    | Rightmost pointer (interior b-tree pages only)                 |
+
+The page type can be the following values:
+
+- A value of 2 means the page is an interior index b-tree page
+- A value of 5 means the page is an interior table b-tree page
+
+The first freeblock is zero if there are no free blocks in the page.
+
+#### Cell pointer array
+
+The cell pointer array is an array of 2-byte integer offsets to the cell contents.
+The cell pointers are arranged in key order with left-most cell (the cell with
+the smallest key) first and the right-most cell (the cell with the largest key) last.
+
+### Overflow Pages
+
+The following calculations are used to determine whether an overflow page should be used.
+
+Variables:
+
+- u: usable size of a database page, i.e. the total page size
+- p: the payload size
+- x: maximum payload that can be stored directly on the b-tree page without spilling onto an overflow page
+- m: minimum payload that must be stored on the btree page before spilling is allowed
+
+```rust
+x = u - 35;
+if(is_index) { // it isn't
+    x = (u - 12) * 64 / 255 - 23;
+}
+
+m = (u - 12) * 32 / 255 - 23
+k = m + (p - m) % (u - 4);
+
+if (p <= x) {
+    // store directly in page
+} else if (k <= x) {
+    // store the first k bytes directly
+    // use overflow for the rest
+} else {
+    // store the first m bytes directly
+    // use overflow for the rest
+}
+```
+
+Overflow pages form a linked list. The first four bytes indicate the next page
+in the chain, zero indicates the page is the last link in the chain.
+The remaining space is used to hold the overflow content.
+
+## OS Integration
+
+The following bash command gives the default pagesize on a Linux machine:
+
+```bash
+getconf PAGESIZE
+```

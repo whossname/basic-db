@@ -7,7 +7,7 @@
 
 ## Decisions
 
-![SQLite Architecture Diagram](https://www.sqlite.org/arch.html "SQLite Architecture Diagram")
+![SQLite Architecture Diagram](https://www.sqlite.org/images/arch2.gif "SQLite Architecture Diagram")
 
 The design is heavily influenced by the sqlite architecture as seen above. The
 main focus will be on the database backend (in the blue). As such the SQL

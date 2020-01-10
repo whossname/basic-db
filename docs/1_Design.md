@@ -85,6 +85,16 @@ part of Page 1 of the database.
 
 ### Tables
 
+Tables are implemented as B\*-trees with leaf pages and interior pages as the nodes.
+
+The content of each SQL table row is stored in the database file by first
+combining the values in the various columns into a byte array in the record
+format, then storing that byte array as the payload in an entry in the table b-tree.
+The order of values in the record is the same as the order of columns in the
+SQL table definition.
+
+Floats that can be stored as integers are automatically converted to integers for storage.
+
 ### B-tree Pages
 
 Only three pages need to be implemented for our basic database:
@@ -166,6 +176,76 @@ if (p <= x) {
 Overflow pages form a linked list. The first four bytes indicate the next page
 in the chain, zero indicates the page is the last link in the chain.
 The remaining space is used to hold the overflow content.
+
+## Records
+
+Payloads are always in the record format:
+
+- header
+  - header size (varint) _includes itself_
+  - per column serial type (varint)
+- body
+
+Serial type:
+
+| Type         | Size     | Description |
+| ------------ | -------- | ----------- |
+| 0            | 0        | Null        |
+| 1            | 1        | Int         |
+| 2            | 2        | Int         |
+| 3            | 3        | Int         |
+| 4            | 4        | Int         |
+| 5            | 6        | Int         |
+| 6            | 8        | Int         |
+| 7            | 8        | Float       |
+| 8            | 0        | Int 0       |
+| 9            | 0        | Int 1       |
+| N >=12, even | (N-12)/2 | Blob        |
+| N >=13, odd  | (N-13)/2 | String      |
+
+Follow this spec verbatim https://www.sqlite.org/fileformat.html#record_format
+
+## varints
+
+varints are big-endian variable-length 64-bit integers where the most significant
+bit of each byte indicates whether the integer is complete. The ninth byte is
+an exception, every bit in the ninth bit is used for the integer value.
+
+Some examples:
+
+| Number | int (i32)  | varint |
+| ------ | ---------- | ------ |
+| 1      | 0x00000001 | 0x01   |
+| 27     | 0x0000001B | 0x1B   |
+| 128    | 0x00000080 | 0x8100 |
+| 256    | 0x00000100 | 0x8200 |
+| 2048   | 0x00000800 | 0x9000 |
+
+## Cells
+
+The following defines the cell structures.
+
+### B-Tree Leaf
+
+- payload bytes (varint) _includes overflow_
+- id (varint)
+- payload (see record)
+- first overflow page number (i32) _include if overflow exists_
+
+### B-Tree Interior
+
+- left child page number (i32)
+- id (varint)
+
+## Master table
+
+Page 1 of a database file is the root page of the master table. The master table
+stores the database schema. It has the following fields:
+
+- schema type (i8) _1 for table_
+- tbl_name (text)
+- rootpage (int)
+- sql (text)
 
 ## OS Integration
 

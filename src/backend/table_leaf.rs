@@ -1,39 +1,87 @@
+use super::database::Database;
 use serialise;
 use std::error;
 use std::fs::File;
+use std::io::prelude::*;
+use std::io::Read;
+use std::io::SeekFrom;
 use std::io::Write;
 use std::mem;
 
+#[derive(Debug, PartialEq)]
+pub struct TableLeaf {
+    page_type: u8,
+    freeblock_index: u16,
+    cell_count: u16,
+    cell_content_start: u16,
+    fragmented_bytes_count: u8,
+}
+
 pub fn init(file: &mut File) -> Result<(), Box<dyn error::Error>> {
     let mut header = [0u8; 8];
-
     let page_type: u8 = 13;
-    //let freeblock_index: u16 = 0;
-    //let cell_count: u16 = 0;
-    //let cell_content_start: u16 = 0;
-    //let fragmented_bytes_count: u8 = 0;
-
-    let mut offest = 0;
-    serialise_integer!(page_type, &mut offest, &mut header);
-    //serialise_integer!(freeblock_index, &mut offest, &mut header);
-    //serialise_integer!(cell_count, &mut offest, &mut header);
-    //serialise_integer!(cell_content_start, &mut offest, &mut header);
-    //serialise_integer!(fragmented_bytes_count, &mut offest, &mut header);
-
+    serialise_integer!(page_type, &mut 0, &mut header);
     file.write_all(&header)?;
     Ok(())
+}
+
+pub fn get_header(
+    file: &mut File,
+    page_number: u32,
+    database: Database,
+) -> Result<TableLeaf, Box<dyn error::Error>> {
+    let header: &mut [u8; 8] = &mut [0; 8];
+    file.read_exact(header)?;
+
+    let header = TableLeaf {
+        page_type: serialise::to_integer(&header[..1])?,
+        freeblock_index: serialise::to_integer(&header[1..3])?,
+        cell_count: serialise::to_integer(&header[3..5])?,
+        cell_content_start: serialise::to_integer(&header[5..7])?,
+        fragmented_bytes_count: serialise::to_integer(&header[7..8])?,
+    };
+
+    Ok(header)
+}
+
+pub fn add_cell(
+    file: &mut File,
+    header: TableLeaf,
+    id: u64,
+    data: &[u8],
+) -> Result<TableLeaf, Box<dyn error::Error>> {
+    let mut cursor_pos = 0;
+
+    if header.cell_count != 0 {
+        // move cursor to last cell
+        cursor_pos = (header.cell_count as i64 - 1) * 2;
+        file.seek(SeekFrom::Current(cursor_pos));
+
+        let buffer: &mut [u8; 2] = &mut [0; 2];
+        file.read_exact(buffer)?;
+        let cell_offset: i64 = serialise::to_integer(&buffer[..])?;
+
+        cursor_pos = cursor_pos + cell_offset;
+        file.seek(SeekFrom::Current(cell_offset));
+    }
+
+    // load pointer array
+    // find insert location
+    // check last cell
+    // binary search the rest
+    // add cell pointer
+
+    // add cell data
+
+    Ok(header)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    use std::fs::OpenOptions;
-    use std::io::prelude::*;
-    use std::io::Read;
-    use std::io::SeekFrom;
-    use std::path::Path;
     use std::fs::remove_file;
+    use std::fs::OpenOptions;
+    use std::path::Path;
 
     #[test]
     fn test_new_table_leaf() {
@@ -49,22 +97,26 @@ mod tests {
 
         init(&mut file).expect("Error creating a new database file");
 
-        let header: &mut [u8; 8] = &mut [0; 8];
-        file.seek(SeekFrom::Start(0)).unwrap();
-        file.read_exact(header).unwrap();
+        file.seek(SeekFrom::Start(0))
+            .expect("Error resetting file cursor");
 
-        let page_type: u8 = serialise::to_integer(&header[..1]).unwrap();
-        println!("{:?}", "here");
-        let freeblock_index: u16 = serialise::to_integer(&header[1..3]).unwrap();
-        let cell_count: u16 = serialise::to_integer(&header[3..5]).unwrap();
-        let cell_content_start: u16 = serialise::to_integer(&header[5..7]).unwrap();
-        let fragmented_bytes_count: u8 = serialise::to_integer(&header[7..8]).unwrap();
+        let database = Database {
+            page_size: 4098,
+            page_count: 1,
+        };
 
-        assert_eq!(page_type, 13);
-        assert_eq!(freeblock_index, 0);
-        assert_eq!(cell_count, 0);
-        assert_eq!(cell_content_start, 0);
-        assert_eq!(fragmented_bytes_count, 0);
+        let header = get_header(&mut file, 2, database).expect("Error retrieving header");
+
+        assert_eq!(
+            header,
+            TableLeaf {
+                page_type: 13,
+                freeblock_index: 0,
+                cell_count: 0,
+                cell_content_start: 0,
+                fragmented_bytes_count: 0,
+            }
+        );
 
         // cleanup
         let path = Path::new(&filename);

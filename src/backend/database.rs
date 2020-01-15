@@ -1,7 +1,5 @@
-extern crate num;
 extern crate sysconf;
 
-use self::num::traits::{Num, PrimInt};
 use std::convert::TryFrom;
 use std::error;
 use std::fs::File;
@@ -10,33 +8,10 @@ use std::io::prelude::*;
 use std::io::Read;
 use std::io::SeekFrom;
 use std::io::Write;
-use std::mem;
 use std::path::Path;
-
-macro_rules! serialise_integer {
-    ($source:ident, $index:expr, $destination:expr) => {{
-        let bytes = $source.to_be_bytes();
-        let size = mem::size_of_val(&$source);
-        let range = $index..$index + size;
-        $destination[range].clone_from_slice(&bytes);
-    }};
-}
-
-#[allow(dead_code)]
-pub fn deserialise_integer<T>(slice: &[u8]) -> Result<T, Box<dyn error::Error>>
-where
-    T: PrimInt + TryFrom<u8> + Num,
-{
-    let mut out: T = T::zero();
-    for byte in slice {
-        out = out << 8;
-        match T::try_from(*byte) {
-            Ok(v) => out = out + v,
-            Err(_) => panic!("failed attempt to convert byte to int"),
-        }
-    }
-    Ok(out)
-}
+// serialise integer
+use serialise;
+use std::mem;
 
 #[allow(dead_code)]
 pub fn new(filename: &String) -> Result<File, Box<dyn error::Error>> {
@@ -45,8 +20,9 @@ pub fn new(filename: &String) -> Result<File, Box<dyn error::Error>> {
 
     let mut header = [0u8; 100];
 
-    serialise_integer!(pagesize, 0, &mut header);
-    serialise_integer!(page_count, 2, &mut header);
+    let mut offset = 0;
+    serialise_integer!(pagesize, &mut offset, &mut header);
+    serialise_integer!(page_count, &mut offset, &mut header);
 
     let path = Path::new(filename);
     let mut file = OpenOptions::new()
@@ -63,20 +39,25 @@ pub fn new(filename: &String) -> Result<File, Box<dyn error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs::remove_file;
 
     #[test]
     fn test_new_database() {
-        let filename = "unit_test_file.db".to_string();
+        let filename = "test_database_new.db".to_string();
         let mut file = new(&filename).expect("Error creating a new database file");
         let header: &mut [u8; 100] = &mut [0; 100];
         file.seek(SeekFrom::Start(0)).unwrap();
         file.read_exact(header).unwrap();
 
-        let pagesize: u16 = deserialise_integer(&header[..2]).unwrap();
+        let pagesize: u16 = serialise::to_integer(&header[..2]).unwrap();
         let expected_pagesize = u16::try_from(sysconf::page::pagesize()).unwrap();
         assert_eq!(pagesize, expected_pagesize);
 
-        let pagecount: u32 = deserialise_integer(&header[2..6]).unwrap();
-        assert_eq!(pagecount, 1)
+        let pagecount: u32 = serialise::to_integer(&header[2..6]).unwrap();
+        assert_eq!(pagecount, 1);
+
+        // cleanup
+        let path = Path::new(&filename);
+        remove_file(path).expect("Failed to delete file");
     }
 }

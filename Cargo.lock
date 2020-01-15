@@ -50,6 +50,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "basic_db"
+version = "0.1.0"
+dependencies = [
+ "num 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "rustyline 6.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "sysconf 0.3.4 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "bitflags"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -361,15 +370,6 @@ dependencies = [
 name = "scoped_threadpool"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-name = "simple-db"
-version = "0.1.0"
-dependencies = [
- "num 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "rustyline 6.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "sysconf 0.3.4 (registry+https://github.com/rust-lang/crates.io-index)",
-]
 
 [[package]]
 name = "syn"

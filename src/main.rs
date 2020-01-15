@@ -1,6 +1,8 @@
 extern crate rustyline;
 
 use std::env;
+#[macro_use]
+mod serialise;
 mod repl;
 mod sql;
 mod backend;

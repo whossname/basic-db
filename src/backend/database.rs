@@ -10,42 +10,20 @@ use std::io::prelude::*;
 use std::io::Read;
 use std::io::SeekFrom;
 use std::io::Write;
-use std::mem::transmute;
+use std::mem;
 use std::path::Path;
 
-pub fn new(filename: &String) -> Result<File, Box<dyn error::Error>> {
-    let pagesize = u16::try_from(sysconf::page::pagesize())?;
-    let page_count: u32 = 1;
-
-    //let mut header_buf = vec![];
-    let mut header = [0u8; 100];
-
-    unsafe {
-        let pagesize_iter: [u8; 2] = transmute(pagesize.to_be());
-        let pagecount_iter: [u8; 4] = transmute(page_count.to_be());
-
-        header[..2].clone_from_slice(&pagesize_iter);
-        header[2..6].clone_from_slice(&pagecount_iter);
-    };
-
-    //header_buf.write_u16::<BigEndian>(pagesize).unwrap();
-    //header_buf.write_u32::<BigEndian>(page_count).unwrap();
-
-    //header.copy_from_slice(&header_buf);
-
-    let path = Path::new(filename);
-    let mut file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .open(path)?;
-
-    file.write_all(&header)?;
-
-    Ok(file)
+macro_rules! serialise_integer {
+    ($source:ident, $index:expr, $destination:expr) => {{
+        let bytes = $source.to_be_bytes();
+        let size = mem::size_of_val(&$source);
+        let range = $index..$index + size;
+        $destination[range].clone_from_slice(&bytes);
+    }};
 }
 
-pub fn deserialise<T>(slice: &[u8]) -> Result<T, Box<dyn error::Error>>
+#[allow(dead_code)]
+pub fn deserialise_integer<T>(slice: &[u8]) -> Result<T, Box<dyn error::Error>>
 where
     T: PrimInt + TryFrom<u8> + Num,
 {
@@ -60,6 +38,28 @@ where
     Ok(out)
 }
 
+#[allow(dead_code)]
+pub fn new(filename: &String) -> Result<File, Box<dyn error::Error>> {
+    let pagesize = u16::try_from(sysconf::page::pagesize())?;
+    let page_count: u32 = 1;
+
+    let mut header = [0u8; 100];
+
+    serialise_integer!(pagesize, 0, &mut header);
+    serialise_integer!(page_count, 2, &mut header);
+
+    let path = Path::new(filename);
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open(path)?;
+
+    file.write_all(&header)?;
+
+    Ok(file)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -72,11 +72,11 @@ mod tests {
         file.seek(SeekFrom::Start(0)).unwrap();
         file.read_exact(header).unwrap();
 
-        let pagesize: u16 = deserialise(&header[..2]).unwrap();
+        let pagesize: u16 = deserialise_integer(&header[..2]).unwrap();
         let expected_pagesize = u16::try_from(sysconf::page::pagesize()).unwrap();
         assert_eq!(pagesize, expected_pagesize);
 
-        let pagecount: u32 = deserialise(&header[2..6]).unwrap();
+        let pagecount: u32 = deserialise_integer(&header[2..6]).unwrap();
         assert_eq!(pagecount, 1)
     }
 }

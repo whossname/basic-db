@@ -138,7 +138,8 @@ The first freeblock is zero if there are no free blocks in the page.
 
 #### Cell pointer array
 
-The cell pointer array is an array of 2-byte integer offsets to the cell contents.
+The cell pointer array is an array of 2-byte integer offsets to the cell contents
+from the start of the page.
 The cell pointers are arranged in key order with left-most cell (the cell with
 the smallest key) first and the right-most cell (the cell with the largest key) last.
 

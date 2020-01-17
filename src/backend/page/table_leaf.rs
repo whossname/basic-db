@@ -12,6 +12,12 @@ pub struct TableLeaf {
         fragmented_bytes_count: u8,
     }
 
+impl TableLeaf {
+pub fn free_space(self, header_start: usize) -> u16{
+    self.cell_content_start - self.cell_count * 2 - header_start as u16
+}
+}
+
 pub fn create_page(database: &mut Database) -> Result<(), Box<dyn error::Error>> {
     let mut page = vec![0u8; database.page_size as usize];
     let page_type: u8 = 13;
@@ -20,7 +26,6 @@ pub fn create_page(database: &mut Database) -> Result<(), Box<dyn error::Error>>
     Ok(())
 }
 
-#[allow(dead_code)]
 pub fn read_page(page: Vec<u8>, header_start: usize) -> Result<Page, Box<dyn error::Error>> {
     let table_leaf = TableLeaf {
         freeblock_index: serialise::to_integer(&page[header_start + 1..header_start + 3])?,
@@ -35,9 +40,8 @@ pub fn read_page(page: Vec<u8>, header_start: usize) -> Result<Page, Box<dyn err
     })
 }
 
-pub fn free_space(page: Vec<u8>, ) {}
+
 /*
-#[allow(dead_code)]
 pub fn add_cell(
     page: PageType,
     database: Database,

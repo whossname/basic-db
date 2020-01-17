@@ -1,11 +1,12 @@
+#![allow(dead_code)]
 extern crate rustyline;
 
 use std::env;
 #[macro_use]
 mod serialise;
+mod backend;
 mod repl;
 mod sql;
-mod backend;
 
 fn main() {
     let args: Vec<String> = env::args().collect();

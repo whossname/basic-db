@@ -7,3 +7,5 @@ authors = ["whossname <tyson.buzza@gmail.com>"]
 rustyline = "6.0.0"
 sysconf = "0.3.4"
 num = "0.2"
+serde = { version = "1.0", features = ["derive"] }
+bincode = "1"

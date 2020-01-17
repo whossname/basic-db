@@ -222,6 +222,21 @@ Some examples:
 | 256    | 0x00000100 | 0x8200 |
 | 2048   | 0x00000800 | 0x9000 |
 
+logic
+
+1) check if we need 9 bytes
+    * if yes take the last byte and shift right by 8
+    * if not take the last 7 bits, prepend a 0 to form the last byte and shift right by 7
+2) while the remainder is not 0 take the last 7 bit, prepend 1, shift right by 7, append the new byte to the list
+
+
+| bits            | size(bytes) |
+| --------------- | ----------- |
+| ones complement | 9           |
+| 7               | 1           |
+| 14              | 2           |
+| < 16_384        | 2           |
+
 ## Cells
 
 The following defines the cell structures.
@@ -243,10 +258,10 @@ The following defines the cell structures.
 Page 1 of a database file is the root page of the master table. The master table
 stores the database schema. It has the following fields:
 
-- schema type (i8) _1 for table_
-- tbl_name (text)
-- rootpage (int)
-- sql (text)
+- schema type (u8) _1 for table_
+- tbl_name (String)
+- rootpage (u32)
+- columns ([String])
 
 ## OS Integration
 
@@ -255,3 +270,32 @@ The following bash command gives the default pagesize on a Linux machine:
 ```bash
 getconf PAGESIZE
 ```
+
+## High level logic
+
+```sql
+CREATE TABLE table (col1 datatype, col2 datatype, ...)
+```
+
+1. the root of the table is page 1
+2. Check if the table already exists, return error if yes
+3. the values are:
+   - schema type = 1
+   - table_name = table
+   - rootpage = database_pagecount + 1
+   - columns as array of strings
+4. Go to insert into table step 3
+
+```sql
+INSERT INTO table (col1, col2, ...) VALUES (a1, a2, ...), (b1, b2, ...)
+```
+
+1. Get root of table
+2.
+
+```sql
+SELECT col1, col2, ... FROM table
+```
+
+1. Get root of table
+2. Iterate through table writing the selected cells to a buffer

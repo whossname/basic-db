@@ -116,8 +116,13 @@ pub fn create_record(row: Vec<Column>) -> Vec<u8> {
         body.append(&mut column);
     }
 
-    header.append(&mut body);
-    header
+    let header_size = build_varint(header.len() as u64);
+
+    header_size
+        .into_iter()
+        .chain(header.into_iter())
+        .chain(body.into_iter())
+        .collect()
 }
 
 fn build_varint(int: u64) -> Vec<u8> {
@@ -130,7 +135,6 @@ fn build_varint(int: u64) -> Vec<u8> {
         varint.push(byte);
         val = val >> 8;
     } else {
-        // use 9 bytes
         let byte = (val & 0x7F) as u8;
         varint.push(byte);
         val = val >> 7;
@@ -143,6 +147,7 @@ fn build_varint(int: u64) -> Vec<u8> {
         val = val >> 7;
     }
 
+    varint.reverse();
     varint
 }
 

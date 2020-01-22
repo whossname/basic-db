@@ -45,7 +45,8 @@ pub enum ColumnType {
 
 impl Database {
     fn read_page(&mut self, page_number: u32) -> Result<Page, Box<dyn error::Error>> {
-        let mut page = Vec::with_capacity(self.page_size as usize);
+        let mut page: Vec<u8> = vec![0; self.page_size as usize];
+
         let offset = (page_number - 1) as u64 * self.page_size as u64;
         self.file.seek(SeekFrom::Start(offset))?;
         self.file.read_exact(&mut page)?;
@@ -91,8 +92,8 @@ impl Database {
 
     fn insert_record(&mut self, record: Vec<u8>, rootpage: u32) {
         // find appropriate page for insert
-        let mut page_number = rootpage;
 
+        let mut page_number = rootpage;
         let page = self.read_page(page_number);
 
         match page {
@@ -100,37 +101,55 @@ impl Database {
                 page: mut page_content,
                 page_type: PageType::TableLeaf(leaf),
             }) => {
-                let record_size = record.len() as u16;
 
                 // check if there is enough space
                 // if not, do we need to split the leaf or add an overflow page?
 
+                let record_size = record.len() as u16;
                 let cell_pointer = if leaf.cell_content_start == 0 {
                     self.page_size - record_size
                 } else {
                     leaf.cell_content_start - record_size
-                } as usize;
+                };
 
                 // add record
-                let cell_pointer_range = cell_pointer..cell_pointer + record_size as usize;
+                let cp = cell_pointer as usize;
+                let cell_pointer_range = cp..cp + record_size as usize;
                 page_content.splice(cell_pointer_range, record);
 
                 // add pointer to record
                 let mut cell_pointer_bytes = vec![0u8; 2];
                 serialise_integer!(cell_pointer, &mut 0, &mut cell_pointer_bytes);
 
-                let mut cell_pointer_location = leaf.cell_count as usize * 2 + 8;
+                let mut page_header_start = 0;
                 if page_number == 1 {
-                    cell_pointer_location += 100;
+                    page_header_start = 100;
                 }
 
+                let cell_pointer_offset = leaf.cell_count as usize * 2 + 8 + page_header_start;
                 page_content.splice(
-                    cell_pointer_location..cell_pointer_location + 2,
+                    cell_pointer_offset..cell_pointer_offset + 2,
+                    cell_pointer_bytes.clone(),
+                );
+
+                // update cell count
+                let cell_count = leaf.cell_count + 1;
+                let mut cell_count_bytes = vec![0u8; 2];
+                serialise_integer!(cell_count, &mut 0, &mut cell_count_bytes);
+
+                let cell_count_offset = page_header_start + 3;
+                page_content.splice(cell_count_offset..cell_count_offset + 2, cell_count_bytes);
+
+                // update cell content start
+                let cell_content_start_offset = page_header_start + 5;
+                page_content.splice(
+                    cell_content_start_offset..cell_content_start_offset + 2,
                     cell_pointer_bytes,
                 );
 
                 // save changes
-                self.save_page(page_content, page_number);
+                self.save_page(page_content, page_number)
+                    .expect("failed to save page");
             }
             Ok(Page {
                 page: page_content,
@@ -270,6 +289,10 @@ fn create_new_database(file_path: &Path) -> Result<Database, Box<dyn error::Erro
     serialise_integer!(page_size, &mut offset, &mut page);
     serialise_integer!(page_count, &mut offset, &mut page);
 
+    offset = 100;
+    let page_type = 13u8;
+    serialise_integer!(page_type, &mut offset, &mut page);
+
     let mut file = OpenOptions::new()
         .read(true)
         .write(true)
@@ -351,6 +374,7 @@ mod tests {
 
         database
     }
+
     fn test_create_table(database: &mut Database) {
         let table_name = "table".to_string();
         let columns = vec![

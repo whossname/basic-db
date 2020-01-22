@@ -7,6 +7,7 @@ use std::io::SeekFrom;
 use std::io::Write;
 use std::mem;
 
+#[derive(Debug)]
 pub struct TableLeaf {
     pub freeblock_index: u16,
     pub cell_count: u16,

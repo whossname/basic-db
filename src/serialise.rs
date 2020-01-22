@@ -21,7 +21,6 @@ where
 {
     let mut out: T = T::zero();
 
-    println!("{:?}", slice);
     for byte in slice {
         out = out.checked_shl(8).unwrap_or(out);
         match T::try_from(*byte) {

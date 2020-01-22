@@ -1,7 +1,9 @@
 extern crate serde;
 extern crate sysconf;
 
+use self::page::table_leaf::TableLeaf;
 use self::page::Page;
+use self::page::PageType;
 use super::page;
 use std::convert::TryFrom;
 use std::error;
@@ -82,11 +84,71 @@ impl Database {
         ];
 
         let record = create_record(row);
-        // let mut offset = 0;
-        //serialise_integer!(schema_type, &mut offset, &mut data);
-        //serialise_string!(table_name, &mut offset, &mut data);
-        //serialise_integer!(rootpage, &mut offset, &mut data);
-        //serialise_array!(columns, &mut offset, &mut data);
+        self.insert_record(record, 1);
+
+        Ok(())
+    }
+
+    fn insert_record(&mut self, record: Vec<u8>, rootpage: u32) {
+        // find appropriate page for insert
+        let mut page_number = rootpage;
+
+        let page = self.read_page(page_number);
+
+        match page {
+            Ok(Page {
+                page: mut page_content,
+                page_type: PageType::TableLeaf(leaf),
+            }) => {
+                let record_size = record.len() as u16;
+
+                // check if there is enough space
+                // if not, do we need to split the leaf or add an overflow page?
+
+                let cell_pointer = if leaf.cell_content_start == 0 {
+                    self.page_size - record_size
+                } else {
+                    leaf.cell_content_start - record_size
+                } as usize;
+
+                // add record
+                let cell_pointer_range = cell_pointer..cell_pointer + record_size as usize;
+                page_content.splice(cell_pointer_range, record);
+
+                // add pointer to record
+                let mut cell_pointer_bytes = vec![0u8; 2];
+                serialise_integer!(cell_pointer, &mut 0, &mut cell_pointer_bytes);
+
+                let mut cell_pointer_location = leaf.cell_count as usize * 2 + 8;
+                if page_number == 1 {
+                    cell_pointer_location += 100;
+                }
+
+                page_content.splice(
+                    cell_pointer_location..cell_pointer_location + 2,
+                    cell_pointer_bytes,
+                );
+
+                // save changes
+                self.save_page(page_content, page_number);
+            }
+            Ok(Page {
+                page: page_content,
+                page_type: PageType::TableInterior(interior),
+            }) => {
+                // find next page
+                // recursively call self
+
+                panic!("Not implemented")
+            }
+            _ => panic!("Not implemented"),
+        }
+    }
+
+    fn save_page(&mut self, page: Vec<u8>, page_number: u32) -> Result<(), Box<dyn error::Error>> {
+        let offset = (page_number - 1) as u64 * self.page_size as u64;
+        self.file.seek(SeekFrom::Start(offset))?;
+        self.file.write_all(&page)?;
         Ok(())
     }
 }

@@ -1,7 +1,6 @@
 extern crate serde;
 extern crate sysconf;
 
-use self::page::table_leaf::TableLeaf;
 use self::page::Page;
 use self::page::PageType;
 use super::page;
@@ -35,8 +34,7 @@ pub enum Column {
     Text(String),
 }
 
-#[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
-#[serde(tag = "t", content = "c")]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
 #[repr(u8)]
 pub enum ColumnType {
     Integer = 1,
@@ -73,26 +71,34 @@ impl Database {
     pub fn describe_table(
         &mut self,
         table_name: String,
-    ) -> Result<Vec<Vec<Column>>, Box<dyn error::Error>> {
-        let record_filter = |row: Vec<Column>| match &row[1] {
+    ) -> Result<Vec<(String, ColumnType)>, Box<dyn error::Error>> {
+        let record_filter = |row: &Vec<Column>| match &row[1] {
             Column::Text(row_table_name) => *row_table_name == table_name,
             _ => false,
         };
 
-        let column_filter = |row| row;
+        let column_filter = |mut row: Vec<Column>| row.drain(3..).collect();
+        let table = self.select_records(1, record_filter, column_filter)?;
+        let columns = table.first().unwrap();
 
-        self.select_records(1, record_filter, column_filter)
+        match columns.first() {
+            Some(Column::Blob(data)) => {
+                let columns = bincode::deserialize::<Vec<(String, ColumnType)>>(data);
+                Ok(columns.unwrap())
+            }
+            _ => panic!("Table columns stored incorrectly"),
+        }
     }
 
-    pub fn select_records<RecF, ColF>(
+    pub fn select_records<'a, RecF, ColF>(
         &mut self,
         page_number: u32,
         record_filter: RecF,
-        column_filter: ColF,
+        mut column_filter: ColF,
     ) -> Result<Vec<Vec<Column>>, Box<dyn error::Error>>
     where
-        RecF: Fn(Vec<Column>) -> bool,
-        ColF: Fn(Vec<Column>) -> Vec<Column>,
+        RecF: Fn(&Vec<Column>) -> bool,
+        ColF: FnMut(Vec<Column>) -> Vec<Column>,
     {
         let page = self.read_page(page_number);
 
@@ -110,14 +116,13 @@ impl Database {
                 for cell_count in 0..leaf.cell_count {
                     let cell_pointer_index = (cell_pointer_start + 2 * cell_count) as usize;
                     let slice = &page_content[cell_pointer_index..cell_pointer_index + 2];
-                    let mut cell_pointer: u16 = serialise::to_integer(slice)?;
-
-                    // TODO
-
-                    // fetch and decode the record
+                    let cell_pointer: u16 = serialise::to_integer(slice)?;
                     let record = fetch_record(&mut (cell_pointer as usize), &page_content);
-                    // apply record_filter and column_filter to each record_filter
-                    records.push(record);
+
+                    if record_filter(&record) {
+                        let filtered_record = column_filter(record);
+                        records.push(filtered_record);
+                    }
                 }
                 // return records
 
@@ -146,12 +151,13 @@ impl Database {
         let rootpage = self.page_count + 1;
         self.page_count = rootpage;
         let schema_type = 1;
+        let serialised_columns = bincode::serialize(&columns)?;
 
         let row = vec![
             Column::Integer(schema_type),
             Column::Text(table_name),
             Column::Integer(rootpage as i128),
-            Column::Blob(bincode::serialize(&columns)?),
+            Column::Blob(serialised_columns),
         ];
 
         let record = create_record(row);
@@ -245,6 +251,7 @@ fn fetch_record(cell_pointer: &mut usize, page_content: &Vec<u8>) -> Vec<Column>
     let cell_start = cell_pointer.clone();
     let header_size = read_varint(cell_pointer, page_content);
     let header_end = header_size as usize + cell_start;
+
     let mut serial_types: Vec<u64> = Vec::new();
     while *cell_pointer < header_end {
         let serial_type = read_varint(cell_pointer, page_content);
@@ -327,13 +334,13 @@ pub fn create_record(row: Vec<Column>) -> Vec<u8> {
             Column::Null() => (0, Vec::new()),
             Column::Integer(int) => serialise_record_integer(int),
             Column::Real(real) => (7, real.to_be_bytes().to_vec()),
-            Column::Text(text) => {
-                let text_type = text.len() as u64 * 2 + 12;
-                (text_type, text.into_bytes())
-            }
             Column::Blob(blob) => {
-                let blob_type = blob.len() as u64 * 2 + 13;
+                let blob_type = blob.len() as u64 * 2 + 12;
                 (blob_type, blob)
+            }
+            Column::Text(text) => {
+                let text_type = text.len() as u64 * 2 + 13;
+                (text_type, text.into_bytes())
             }
         })
         .collect();
@@ -346,7 +353,7 @@ pub fn create_record(row: Vec<Column>) -> Vec<u8> {
         body.append(&mut column);
     }
 
-    let header_size = build_varint(header.len() as u64);
+    let header_size = build_varint(1 + header.len() as u64);
 
     header_size
         .into_iter()
@@ -399,8 +406,9 @@ fn read_varint(cell_pointer: &mut usize, page_content: &Vec<u8>) -> u64 {
         varint = varint << 7;
         varint = varint + (byte & 0x7F) as u64;
 
-        let finished_flag = (byte & 0x80) as u8;
-        if finished_flag == 0x80 {
+        let continue_flag = (byte & 0x80) as u8;
+
+        if continue_flag == 0x00 {
             return varint;
         }
     }
@@ -555,12 +563,11 @@ mod tests {
             ("name string".to_string(), ColumnType::Text),
         ];
 
-        database.create_table(table_name.clone(), columns.clone());
-        let columns_wrapper = database.describe_table(table_name).unwrap();
-        let columns_out = columns_wrapper.first();
-        println!("{:?}", columns);
-        println!("{:?}", columns_out);
-        // assert_eq!(, columns);
-        panic!("oops")
+        database
+            .create_table(table_name.clone(), columns.clone())
+            .unwrap();
+
+        let columns_out = database.describe_table(table_name).unwrap();
+        assert_eq!(columns, columns_out);
     }
 }

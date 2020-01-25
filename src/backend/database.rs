@@ -71,20 +71,21 @@ impl Database {
     pub fn describe_table(
         &mut self,
         table_name: String,
-    ) -> Result<Vec<(String, ColumnType)>, Box<dyn error::Error>> {
+    ) -> Result<(u32, Vec<(String, ColumnType)>), Box<dyn error::Error>> {
         let record_filter = |row: &Vec<Column>| match &row[1] {
             Column::Text(row_table_name) => *row_table_name == table_name,
             _ => false,
         };
 
-        let column_filter = |mut row: Vec<Column>| row.drain(3..).collect();
+        let column_filter = |mut row: Vec<Column>| row.drain(2..).collect();
+
         let table = self.select_records(1, record_filter, column_filter)?;
         let columns = table.first().unwrap();
 
-        match columns.first() {
-            Some(Column::Blob(data)) => {
+        match columns.as_slice() {
+            [Column::Integer(page_number), Column::Blob(data)] => {
                 let columns = bincode::deserialize::<Vec<(String, ColumnType)>>(data);
-                Ok(columns.unwrap())
+                Ok((*page_number as u32, columns.unwrap()))
             }
             _ => panic!("Table columns stored incorrectly"),
         }
@@ -162,6 +163,8 @@ impl Database {
 
         let record = create_record(row);
         self.insert_record(record, 1);
+
+        page::table_leaf::create_page(self)?;
 
         Ok(())
     }
@@ -477,6 +480,7 @@ fn create_new_database(file_path: &Path) -> Result<Database, Box<dyn error::Erro
     let mut file = OpenOptions::new()
         .read(true)
         .write(true)
+        //.append(true)
         .create(true)
         .open(file_path)?;
 
@@ -492,7 +496,11 @@ fn create_new_database(file_path: &Path) -> Result<Database, Box<dyn error::Erro
 }
 
 fn load_existing_database(file_path: &Path) -> Result<Database, Box<dyn error::Error>> {
-    let mut file = OpenOptions::new().read(true).write(true).open(file_path)?;
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        //.append(true)
+        .open(file_path)?;
 
     let header: &mut [u8; 100] = &mut [0; 100];
 
@@ -524,17 +532,33 @@ pub fn load(filename: &String) -> Result<Database, Box<dyn error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs::remove_file;
+    use std::fs;
 
     #[test]
+    #[allow(unused_must_use)]
     fn test_database() {
+        // setup
         let filename = "test_database_new.db".to_string();
+        let path = Path::new(&filename);
+        fs::remove_file(path);
+
+        // test
         let mut database = test_new_database(&filename);
-        let table = test_create_table(&mut database);
+        let metadata = fs::metadata(&filename).unwrap();
+        assert_eq!(4096, metadata.len());
+
+        test_create_table(&mut database, 1);
+        assert_eq!(2, database.page_count);
+        let metadata = fs::metadata(&filename).unwrap();
+        assert_eq!(2 * 4096, metadata.len());
+
+        test_create_table(&mut database, 2);
+        assert_eq!(3, database.page_count);
+        let metadata = fs::metadata(&filename).unwrap();
+        assert_eq!(3 * 4096, metadata.len());
 
         // cleanup
-        let path = Path::new(&filename);
-        remove_file(path).expect("Failed to delete file");
+        fs::remove_file(path).expect("Failed to delete file");
     }
 
     fn test_new_database(filename: &String) -> Database {
@@ -556,8 +580,10 @@ mod tests {
         database
     }
 
-    fn test_create_table(database: &mut Database) {
-        let table_name = "table".to_string();
+    fn test_create_table(database: &mut Database, table_number: usize) {
+        let mut table_name = "table".to_string();
+        table_name.push_str(&table_number.to_string());
+
         let columns = vec![
             ("count".to_string(), ColumnType::Integer),
             ("name string".to_string(), ColumnType::Text),
@@ -567,7 +593,8 @@ mod tests {
             .create_table(table_name.clone(), columns.clone())
             .unwrap();
 
-        let columns_out = database.describe_table(table_name).unwrap();
+        let (page_number, columns_out) = database.describe_table(table_name).unwrap();
         assert_eq!(columns, columns_out);
+        assert_eq!(page_number as usize, table_number + 1);
     }
 }

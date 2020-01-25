@@ -68,27 +68,15 @@ impl Database {
         }
     }
 
-    pub fn describe_table(
+    pub fn save_page(
         &mut self,
-        table_name: String,
-    ) -> Result<(u32, Vec<(String, ColumnType)>), Box<dyn error::Error>> {
-        let record_filter = |row: &Vec<Column>| match &row[1] {
-            Column::Text(row_table_name) => *row_table_name == table_name,
-            _ => false,
-        };
-
-        let column_filter = |mut row: Vec<Column>| row.drain(2..).collect();
-
-        let table = record::select_records(self, 1, record_filter, column_filter)?;
-        let columns = table.first().unwrap();
-
-        match columns.as_slice() {
-            [Column::Integer(page_number), Column::Blob(data)] => {
-                let columns = bincode::deserialize::<Vec<(String, ColumnType)>>(data);
-                Ok((*page_number as u32, columns.unwrap()))
-            }
-            _ => panic!("Table columns stored incorrectly"),
-        }
+        page: Vec<u8>,
+        page_number: u32,
+    ) -> Result<(), Box<dyn error::Error>> {
+        let offset = (page_number - 1) as u64 * self.page_size as u64;
+        self.file.seek(SeekFrom::Start(offset))?;
+        self.file.write_all(&page)?;
+        Ok(())
     }
 
     pub fn create_table(
@@ -115,15 +103,64 @@ impl Database {
         Ok(())
     }
 
-    pub fn save_page(
+    pub fn describe_table(
         &mut self,
-        page: Vec<u8>,
-        page_number: u32,
+        table_name: String,
+    ) -> Result<(u32, Vec<(String, ColumnType)>), Box<dyn error::Error>> {
+        let record_filter = |row: &Vec<Column>| match &row[1] {
+            Column::Text(row_table_name) => *row_table_name == table_name,
+            _ => false,
+        };
+
+        let column_filter = |mut row: Vec<Column>| row.drain(2..).collect();
+
+        let table = record::select_records(self, 1, record_filter, column_filter)?;
+        let columns = table.first().unwrap();
+
+        match columns.as_slice() {
+            [Column::Integer(page_number), Column::Blob(data)] => {
+                let columns = bincode::deserialize::<Vec<(String, ColumnType)>>(data);
+                Ok((*page_number as u32, columns.unwrap()))
+            }
+            _ => panic!("Table columns stored incorrectly"),
+        }
+    }
+
+    pub fn insert_record(
+        &mut self,
+        table_name: String,
+        row: Vec<Column>,
     ) -> Result<(), Box<dyn error::Error>> {
-        let offset = (page_number - 1) as u64 * self.page_size as u64;
-        self.file.seek(SeekFrom::Start(offset))?;
-        self.file.write_all(&page)?;
+        let (page_number, _columns) = self.describe_table(table_name)?;
+        // validate or build row against columns
+        let record = record::create_record(row);
+        record::insert_record(self, record, page_number);
         Ok(())
+    }
+
+    pub fn select_all_records(
+        &mut self,
+        table_name: String,
+    ) -> Result<Vec<Vec<Column>>, Box<dyn error::Error>> {
+        let record_filter = |_row: &Vec<Column>| true;
+        let column_filter = |row: Vec<Column>| row;
+        // let column_filter = |mut row: Vec<Column>| row.drain(2..).collect();
+
+        self.select_records(table_name, record_filter, column_filter)
+    }
+
+    pub fn select_records<RecF, ColF>(
+        &mut self,
+        table_name: String,
+        record_filter: RecF,
+        mut column_filter: ColF,
+    ) -> Result<Vec<Vec<Column>>, Box<dyn error::Error>>
+    where
+        RecF: Fn(&Vec<Column>) -> bool,
+        ColF: FnMut(Vec<Column>) -> Vec<Column>,
+    {
+        let (page_number, _columns) = self.describe_table(table_name)?;
+        record::select_records(self, page_number, record_filter, column_filter)
     }
 }
 

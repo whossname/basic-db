@@ -166,7 +166,19 @@ pub fn create_record(row: Vec<Column>) -> Vec<u8> {
         body.append(&mut column);
     }
 
-    let header_size = build_varint(1 + header.len() as u64);
+    let mut header_size = header.len() as u64;
+    let zeros = header_size.leading_zeros() as u64;
+
+    let header_size_size = if zeros < 8 {
+        9u64
+    } else {
+        // 64 bits offset by -1 because 7 bits needs 1 byte, not 2
+        let required_bits = 63 - zeros;
+        required_bits / 7 + 1
+    };
+
+    header_size = header_size + header_size_size;
+    let header_size = build_varint(header_size);
 
     header_size
         .into_iter()
@@ -330,7 +342,8 @@ pub fn insert_record(database: &mut Database, record: Vec<u8>, rootpage: u32) {
             );
 
             // save changes
-            database.save_page(page_content, page_number)
+            database
+                .save_page(page_content, page_number)
                 .expect("failed to save page");
         }
         Ok(Page {
@@ -343,4 +356,5 @@ pub fn insert_record(database: &mut Database, record: Vec<u8>, rootpage: u32) {
             panic!("Not implemented")
         }
         _ => panic!("Not implemented"),
-    }}
+    }
+}

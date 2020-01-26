@@ -4,6 +4,7 @@ extern crate sysconf;
 use self::page::Page;
 use super::page;
 use super::record;
+use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::error;
 use std::fs::File;
@@ -25,7 +26,7 @@ pub struct Database {
     pub file: File,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Column {
     Null(),
     Integer(i128),
@@ -129,10 +130,39 @@ impl Database {
     pub fn insert_record(
         &mut self,
         table_name: String,
-        row: Vec<Column>,
+        row_hash: HashMap<String, String>,
     ) -> Result<(), Box<dyn error::Error>> {
-        let (page_number, _columns) = self.describe_table(table_name)?;
-        // validate or build row against columns
+        let (page_number, columns) = self.describe_table(table_name)?;
+
+        let row = columns
+            .into_iter()
+            .map(|col| match col {
+                (col_name, ColumnType::Integer) => {
+                    let column_wrapper = |value| Column::Integer(value);
+                    parse_column(&row_hash, col_name, column_wrapper)
+                }
+                (col_name, ColumnType::Real) => {
+                    let column_wrapper = |value| Column::Real(value);
+                    parse_column(&row_hash, col_name, column_wrapper)
+                }
+                (col_name, ColumnType::Text) => {
+                    let column_wrapper = |value| Column::Text(value);
+                    parse_column(&row_hash, col_name, column_wrapper)
+                }
+                (col_name, ColumnType::Blob) => {
+                    let value = row_hash.get(&col_name);
+                    match value {
+                        Some(value) => {
+                            // TODO parse binary correctly
+                            let value = value.clone().into_bytes();
+                            Column::Blob(value)
+                        }
+                        None => Column::Null(),
+                    }
+                }
+            })
+            .collect();
+
         let record = record::create_record(row);
         record::insert_record(self, record, page_number);
         Ok(())
@@ -144,8 +174,6 @@ impl Database {
     ) -> Result<Vec<Vec<Column>>, Box<dyn error::Error>> {
         let record_filter = |_row: &Vec<Column>| true;
         let column_filter = |row: Vec<Column>| row;
-        // let column_filter = |mut row: Vec<Column>| row.drain(2..).collect();
-
         self.select_records(table_name, record_filter, column_filter)
     }
 
@@ -153,7 +181,7 @@ impl Database {
         &mut self,
         table_name: String,
         record_filter: RecF,
-        mut column_filter: ColF,
+        column_filter: ColF,
     ) -> Result<Vec<Vec<Column>>, Box<dyn error::Error>>
     where
         RecF: Fn(&Vec<Column>) -> bool,
@@ -161,6 +189,27 @@ impl Database {
     {
         let (page_number, _columns) = self.describe_table(table_name)?;
         record::select_records(self, page_number, record_filter, column_filter)
+    }
+}
+
+fn parse_column<T: std::str::FromStr, ColFn>(
+    row_hash: &HashMap<String, String>,
+    col_name: String,
+    column_wrapper: ColFn,
+) -> Column
+where
+    ColFn: Fn(T) -> Column,
+{
+    let value = row_hash.get(&col_name);
+    match value {
+        Some(value) => {
+            let value = value.parse();
+            match value {
+                Ok(value) => column_wrapper(value),
+                _ => panic!("input value not compatible with data type"),
+            }
+        }
+        None => Column::Null(),
     }
 }
 
@@ -248,18 +297,53 @@ mod tests {
         let metadata = fs::metadata(&filename).unwrap();
         assert_eq!(4096, metadata.len());
 
-        test_create_table(&mut database, 1);
-        assert_eq!(2, database.page_count);
-        let metadata = fs::metadata(&filename).unwrap();
-        assert_eq!(2 * 4096, metadata.len());
+        test_create_table(&mut database, 1, &filename);
+        test_create_table(&mut database, 2, &filename);
 
-        test_create_table(&mut database, 2);
-        assert_eq!(3, database.page_count);
-        let metadata = fs::metadata(&filename).unwrap();
-        assert_eq!(3 * 4096, metadata.len());
+        test_insert_record(&mut database, 1);
+        test_insert_record(&mut database, 2);
 
         // cleanup
         fs::remove_file(path).expect("Failed to delete file");
+    }
+
+    fn test_insert_record(database: &mut Database, table_number: usize) {
+        let mut table_name = "table".to_string();
+        table_name.push_str(&table_number.to_string());
+
+        // build hash
+        let name = "fred".to_string();
+        let mut row = HashMap::new();
+        row.insert("count".to_string(), table_number.to_string());
+        row.insert("name".to_string(), name.clone());
+
+        // insert
+        database
+            .insert_record(table_name.clone(), row)
+            .expect("failed to insert record");
+
+        // test select all
+        let output = database.select_all_records(table_name.clone()).unwrap();
+        let expected = vec![vec![
+            Column::Integer(table_number as i128),
+            Column::Text(name.clone()),
+        ]];
+        assert_eq!(output, expected);
+
+        // test select count where name
+        let record_filter = |row: &Vec<Column>| match &row[1] {
+            Column::Text(val) => *val == name,
+            _ => false,
+        };
+
+        let column_filter = |mut row: Vec<Column>| row.drain(..1).collect();
+
+        let output = database
+            .select_records(table_name, record_filter, column_filter)
+            .unwrap();
+
+        let count_out = output.first().unwrap().first().unwrap();
+        assert_eq!(*count_out, Column::Integer(table_number as i128));
     }
 
     fn test_new_database(filename: &String) -> Database {
@@ -281,13 +365,13 @@ mod tests {
         database
     }
 
-    fn test_create_table(database: &mut Database, table_number: usize) {
+    fn test_create_table(database: &mut Database, table_number: usize, filename: &String) {
         let mut table_name = "table".to_string();
         table_name.push_str(&table_number.to_string());
 
         let columns = vec![
             ("count".to_string(), ColumnType::Integer),
-            ("name string".to_string(), ColumnType::Text),
+            ("name".to_string(), ColumnType::Text),
         ];
 
         database
@@ -297,5 +381,9 @@ mod tests {
         let (page_number, columns_out) = database.describe_table(table_name).unwrap();
         assert_eq!(columns, columns_out);
         assert_eq!(page_number as usize, table_number + 1);
+
+        assert_eq!(table_number as u32 + 1, database.page_count);
+        let metadata = fs::metadata(&filename).unwrap();
+        assert_eq!((table_number as u64 + 1) * 4096, metadata.len());
     }
 }

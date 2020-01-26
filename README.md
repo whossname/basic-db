@@ -1,5 +1,8 @@
 # Readme
 
+The following is a design document. This project is not intended for procution use, it
+is an educational project.
+
 ## Motivation
 
 - Learn more about how databases work at a low level
@@ -21,6 +24,7 @@ will be implemented:
 
 For now we will not implement the following features:
 
+- delete/update records
 - hot journals (for rollbacks)
 - indexes
 - freelists (for deleting data)
@@ -30,6 +34,7 @@ For now we will not implement the following features:
 - the sqlite_sequence table
 - the sqlite_stat tables
 - page reserved regions
+- transactions
 
 We also don't need the SQLite legacy features such as the lock-byte page and
 several of the database header fields.
@@ -39,6 +44,8 @@ Finally the B\*-Tree implementaion for tables will be simplified by including a
 The autoincrement value for this id field will be stored in the master table.
 This simplifies the record sort order and auto increment feature,
 removeing the need for the sqlite_sequence table.
+
+**NOTE** the "id" field has not been implemented, I am currently reconsidering it's usefulness.
 
 ## Database File Format
 

@@ -44,6 +44,38 @@ pub enum ColumnType {
     Text = 4,
 }
 
+impl std::fmt::Display for Database {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "page_size: {}, page_count: {}",
+            self.page_size, self.page_count
+        )
+    }
+}
+
+impl std::fmt::Display for Column {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Column::Null() => {
+                write!(f, "null")
+            }
+            Column::Integer(i) => {
+                write!(f, "int: {}", i)
+            }
+            Column::Real(r) => {
+                write!(f, "real: {}", r)
+            }
+            Column::Text(s) => {
+                write!(f, "text: {}", s)
+            }
+            Column::Blob(b) => {
+                write!(f, "blob ({})", b.len())
+            }
+        }
+    }
+}
+
 impl Database {
     pub fn read_page(&mut self, page_number: u32) -> Result<Page, Box<dyn error::Error>> {
         let mut page: Vec<u8> = vec![0; self.page_size as usize];
@@ -127,42 +159,29 @@ impl Database {
         }
     }
 
+    pub fn insert_records(
+        &mut self,
+        table_name: String,
+        row_hashs: Vec<HashMap<String, String>>,
+    ) -> Result<(), Box<dyn error::Error>> {
+        let (page_number, columns) = self.describe_table(table_name)?;
+
+        row_hashs.into_iter().map(|row_hash| {
+            let row = create_row(&columns, row_hash);
+            let record = record::create_record(row);
+            record::insert_record(self, record, page_number);
+        }).count();
+
+        Ok(())
+    }
+
     pub fn insert_record(
         &mut self,
         table_name: String,
         row_hash: HashMap<String, String>,
     ) -> Result<(), Box<dyn error::Error>> {
         let (page_number, columns) = self.describe_table(table_name)?;
-
-        let row = columns
-            .into_iter()
-            .map(|col| match col {
-                (col_name, ColumnType::Integer) => {
-                    let column_wrapper = |value| Column::Integer(value);
-                    parse_column(&row_hash, col_name, column_wrapper)
-                }
-                (col_name, ColumnType::Real) => {
-                    let column_wrapper = |value| Column::Real(value);
-                    parse_column(&row_hash, col_name, column_wrapper)
-                }
-                (col_name, ColumnType::Text) => {
-                    let column_wrapper = |value| Column::Text(value);
-                    parse_column(&row_hash, col_name, column_wrapper)
-                }
-                (col_name, ColumnType::Blob) => {
-                    let value = row_hash.get(&col_name);
-                    match value {
-                        Some(value) => {
-                            // TODO parse binary correctly
-                            let value = value.clone().into_bytes();
-                            Column::Blob(value)
-                        }
-                        None => Column::Null(),
-                    }
-                }
-            })
-            .collect();
-
+        let row = create_row(&columns, row_hash);
         let record = record::create_record(row);
         record::insert_record(self, record, page_number);
         Ok(())
@@ -192,15 +211,50 @@ impl Database {
     }
 }
 
+fn create_row(
+    columns: &Vec<(String, ColumnType)>,
+    row_hash: HashMap<String, String>,
+) -> Vec<Column> {
+    let row = columns
+        .into_iter()
+        .map(|col| match col {
+            (col_name, ColumnType::Integer) => {
+                let column_wrapper = |value| Column::Integer(value);
+                parse_column(&row_hash, col_name, column_wrapper)
+            }
+            (col_name, ColumnType::Real) => {
+                let column_wrapper = |value| Column::Real(value);
+                parse_column(&row_hash, col_name, column_wrapper)
+            }
+            (col_name, ColumnType::Text) => {
+                let column_wrapper = |value| Column::Text(value);
+                parse_column(&row_hash, col_name, column_wrapper)
+            }
+            (col_name, ColumnType::Blob) => {
+                let value = row_hash.get(col_name);
+                match value {
+                    Some(value) => {
+                        // TODO parse binary correctly
+                        let value = value.clone().into_bytes();
+                        Column::Blob(value)
+                    }
+                    None => Column::Null(),
+                }
+            }
+        })
+        .collect();
+    row
+}
+
 fn parse_column<T: std::str::FromStr, ColFn>(
     row_hash: &HashMap<String, String>,
-    col_name: String,
+    col_name: &String,
     column_wrapper: ColFn,
 ) -> Column
 where
     ColFn: Fn(T) -> Column,
 {
-    let value = row_hash.get(&col_name);
+    let value = row_hash.get(col_name);
     match value {
         Some(value) => {
             let value = value.parse();
@@ -283,17 +337,15 @@ pub fn load(filename: &String) -> Result<Database, Box<dyn error::Error>> {
 mod tests {
     use super::*;
     use std::fs;
+    use std::io::ErrorKind;
 
     #[test]
     #[allow(unused_must_use)]
-    fn test_database() {
-        // setup
-        let filename = "test_database_new.db".to_string();
-        let path = Path::new(&filename);
-        fs::remove_file(path);
+    fn basic_database_tests() {
+        let filename = create_db_file("basic");
 
-        // test
         let mut database = test_new_database(&filename);
+
         let metadata = fs::metadata(&filename).unwrap();
         assert_eq!(4096, metadata.len());
 
@@ -303,8 +355,82 @@ mod tests {
         test_insert_record(&mut database, 1);
         test_insert_record(&mut database, 2);
 
-        // cleanup
-        fs::remove_file(path).expect("Failed to delete file");
+        cleanup(&filename);
+    }
+
+    #[test]
+    #[allow(unused_must_use)]
+    fn single_record() {
+        let filename = create_db_file("single_record");
+        let mut database = load(&filename).expect("Error creating a new database file");
+        create_basic_table(&mut database);
+        test_insert_record(&mut database, 1);
+    }
+
+    #[test]
+    #[allow(unused_must_use)]
+    fn multiple_records() {
+        let filename = create_db_file("multiple_records");
+        let mut database = load(&filename).expect("Error creating a new database file");
+        create_basic_table(&mut database);
+
+        let row_hashs = vec![simple_record("fred", 1), simple_record("george", 2)];
+
+        database.insert_records("table1".to_string(), row_hashs);
+
+        let output = database.select_all_records("table1".to_string()).unwrap();
+
+        let expected = vec![
+            vec![Column::Integer(1), Column::Text("fred".to_string())],
+            vec![Column::Integer(2), Column::Text("george".to_string())],
+        ];
+        assert_eq!(output, expected);
+    }
+
+    fn simple_record(name: &str, count: i32) -> HashMap<String, String> {
+        let mut row = HashMap::new();
+        row.insert("count".to_string(), count.to_string());
+        row.insert("name".to_string(), name.to_string());
+        row
+    }
+
+    fn simple_insert_record(database: &mut Database, name: &str, count: i32) {
+        let mut row = HashMap::new();
+        row.insert("count".to_string(), count.to_string());
+        row.insert("name".to_string(), name.to_string());
+
+        // insert
+        database
+            .insert_record("table1".to_string(), row)
+            .expect("failed to insert record");
+    }
+
+    fn create_basic_table(database: &mut Database) -> () {
+        let columns = vec![
+            ("count".to_string(), ColumnType::Integer),
+            ("name".to_string(), ColumnType::Text),
+        ];
+
+        database
+            .create_table("table1".to_string(), columns.clone())
+            .unwrap();
+    }
+
+    fn create_db_file(version: &str) -> String {
+        let filename = format!("test_database_{}.db", version);
+        cleanup(&filename);
+        return filename;
+    }
+
+    fn cleanup(filename: &String) {
+        let path = Path::new(&filename);
+        match fs::remove_file(path) {
+            Ok(_) => (),
+            Err(error) => match error.kind() {
+                ErrorKind::NotFound => (),
+                other_error => panic!("Problem opening the file: {:?}", other_error),
+            },
+        }
     }
 
     fn test_insert_record(database: &mut Database, table_number: usize) {
@@ -348,6 +474,7 @@ mod tests {
 
     fn test_new_database(filename: &String) -> Database {
         let mut database = load(filename).expect("Error creating a new database file");
+        println!("{}", database);
 
         let header: &mut [u8; 100] = &mut [0; 100];
         database.file.seek(SeekFrom::Start(0)).unwrap();

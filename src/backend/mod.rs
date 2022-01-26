@@ -1,3 +1,3 @@
-mod database;
+pub mod database;
 mod page;
 mod record;

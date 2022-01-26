@@ -3,8 +3,8 @@ extern crate rustyline;
 
 use std::env;
 #[macro_use]
-mod serialise;
-mod backend;
+pub mod serialise;
+pub mod backend;
 mod repl;
 mod sql;
 

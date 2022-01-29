@@ -19,6 +19,6 @@ pub enum PageType {
 
 #[derive(Debug)]
 pub struct Page {
-    pub page: Vec<u8>,
+    pub data: Vec<u8>,
     pub page_type: PageType,
 }

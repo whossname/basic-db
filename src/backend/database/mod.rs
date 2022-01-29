@@ -4,6 +4,7 @@ extern crate sysconf;
 use self::page::Page;
 use super::page;
 use super::record;
+use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::error;
 use std::fs::File;
@@ -22,8 +23,9 @@ mod insert;
 
 #[derive(Debug)]
 pub struct Database {
-    pub page_size: u16,
+    pub page_cache: HashMap<u32, Page>,
     pub page_count: u32,
+    pub page_size: u16,
     pub file: File,
 }
 
@@ -78,6 +80,16 @@ impl std::fmt::Display for Column {
 }
 
 impl Database {
+    pub fn commit(&mut self) -> Result<(), Box<dyn error::Error>> {
+        for (page_number, page) in self.page_cache.drain() {
+            let offset = (page_number - 1) as u64 * self.page_size as u64;
+            self.file.seek(SeekFrom::Start(offset))?;
+            self.file.write_all(&page.data)?;
+        }
+
+        Ok(())
+    }
+
     pub fn read_page(&mut self, page_number: u32) -> Result<Page, Box<dyn error::Error>> {
         let mut page: Vec<u8> = vec![0; self.page_size as usize];
 
@@ -125,17 +137,6 @@ impl Database {
         }
     }
 
-    pub fn save_page(
-        &mut self,
-        page: Vec<u8>,
-        page_number: u32,
-    ) -> Result<(), Box<dyn error::Error>> {
-        let offset = (page_number - 1) as u64 * self.page_size as u64;
-        self.file.seek(SeekFrom::Start(offset))?;
-        self.file.write_all(&page)?;
-        Ok(())
-    }
-
     pub fn create_table(
         &mut self,
         table_name: String,
@@ -155,6 +156,7 @@ impl Database {
 
         let record = record::create_record(row);
         record::insert_record(self, record, 1);
+        self.commit()?;
         page::table_leaf::create_page(self)?;
 
         Ok(())
@@ -185,6 +187,7 @@ fn create_new_database(file_path: &Path) -> Result<Database, Box<dyn error::Erro
     file.write_all(&page)?;
 
     let database = Database {
+        page_cache: HashMap::new(),
         page_count: page_count,
         page_size: page_size,
         file: file,
@@ -209,6 +212,7 @@ fn load_existing_database(file_path: &Path) -> Result<Database, Box<dyn error::E
     let page_count = serialise::to_integer(&header[2..6])?;
 
     let database = Database {
+        page_cache: HashMap::new(),
         page_count: page_count,
         page_size: page_size,
         file: file,

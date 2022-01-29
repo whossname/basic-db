@@ -25,6 +25,7 @@ pub fn create_page(database: &mut Database) -> Result<(), Box<dyn error::Error>>
     let mut page = vec![0u8; database.page_size as usize];
     let page_type: u8 = 13;
     serialise_integer!(page_type, &mut 0, &mut page);
+    // position at end of file
     database.file.seek(SeekFrom::End(0))?;
     database.file.write_all(&page)?;
     Ok(())
@@ -40,6 +41,6 @@ pub fn read_page(page: Vec<u8>, header_start: usize) -> Result<Page, Box<dyn err
 
     Ok(Page {
         page_type: PageType::TableLeaf(table_leaf),
-        page: page,
+        data: page,
     })
 }

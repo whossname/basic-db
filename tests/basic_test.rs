@@ -50,7 +50,10 @@ fn multiple_records() {
 
     let row_hashs = vec![simple_record("fred", 1), simple_record("george", 2)];
 
-    database.insert_records("table1".to_string(), row_hashs).unwrap();
+    database
+        .insert_records("table1".to_string(), row_hashs)
+        .unwrap();
+    database.commit().unwrap();
 
     let output = database.select_all_records("table1".to_string()).unwrap();
 
@@ -121,6 +124,8 @@ fn test_insert_record(database: &mut Database, table_number: usize) {
     database
         .insert_record(table_name.clone(), row)
         .expect("failed to insert record");
+
+    database.commit().unwrap();
 
     // test select all
     let output = database.select_all_records(table_name.clone()).unwrap();

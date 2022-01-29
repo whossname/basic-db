@@ -26,6 +26,7 @@ impl Database {
             })
             .count();
 
+        self.commit()?;
         Ok(())
     }
 
@@ -38,6 +39,7 @@ impl Database {
         let row = create_row(&columns, row_hash);
         let record = record::create_record(row);
         record::insert_record(self, record, page_number);
+        self.commit()?;
         Ok(())
     }
 

@@ -20,7 +20,7 @@ where
 
     match page {
         Ok(Page {
-            page: page_content,
+            data: page_content,
             page_type: PageType::TableLeaf(leaf),
         }) => {
             let mut records: Vec<Vec<Column>> = Vec::new();
@@ -46,7 +46,7 @@ where
         }
 
         Ok(Page {
-            page: page_content,
+            data: page_content,
             page_type: PageType::TableInterior(interior),
         }) => {
             // for each page

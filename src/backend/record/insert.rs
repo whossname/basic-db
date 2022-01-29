@@ -2,20 +2,16 @@ use self::page::Page;
 use self::page::PageType;
 use super::super::database::{Column, Database};
 use super::super::page;
-use std::error;
 use std::mem;
 
 pub fn insert_record(database: &mut Database, record: Vec<u8>, rootpage: u32) {
     // find appropriate page for insert
 
-    let mut page_number = rootpage;
-    let page = database.read_page(page_number);
+    let page_number = rootpage;
+    let mut page = database.read_page(page_number).unwrap();
 
-    match page {
-        Ok(Page {
-            page: mut page_content,
-            page_type: PageType::TableLeaf(leaf),
-        }) => {
+    match page.page_type {
+        PageType::TableLeaf(ref leaf) => {
             // check if there is enough space
             // if not, do we need to split the leaf or add an overflow page?
 
@@ -29,7 +25,7 @@ pub fn insert_record(database: &mut Database, record: Vec<u8>, rootpage: u32) {
             // add record
             let cp = cell_pointer as usize;
             let cell_pointer_range = cp..cp + record_size as usize;
-            page_content.splice(cell_pointer_range, record);
+            page.data.splice(cell_pointer_range, record);
 
             // add pointer to record
             let mut cell_pointer_bytes = vec![0u8; 2];
@@ -41,7 +37,7 @@ pub fn insert_record(database: &mut Database, record: Vec<u8>, rootpage: u32) {
             }
 
             let cell_pointer_offset = leaf.cell_count as usize * 2 + 8 + page_header_start;
-            page_content.splice(
+            page.data.splice(
                 cell_pointer_offset..cell_pointer_offset + 2,
                 cell_pointer_bytes.clone(),
             );
@@ -52,31 +48,26 @@ pub fn insert_record(database: &mut Database, record: Vec<u8>, rootpage: u32) {
             serialise_integer!(cell_count, &mut 0, &mut cell_count_bytes);
 
             let cell_count_offset = page_header_start + 3;
-            page_content.splice(cell_count_offset..cell_count_offset + 2, cell_count_bytes);
+            page.data
+                .splice(cell_count_offset..cell_count_offset + 2, cell_count_bytes);
 
             // update cell content start
             let cell_content_start_offset = page_header_start + 5;
-            page_content.splice(
+            page.data.splice(
                 cell_content_start_offset..cell_content_start_offset + 2,
                 cell_pointer_bytes,
             );
 
-            // save changes
-            database
-                .save_page(page_content, page_number)
-                .expect("failed to save page");
+            database.page_cache.insert(page_number, page);
         }
-        Ok(Page {
-            page: page_content,
-            page_type: PageType::TableInterior(interior),
-        }) => {
+        PageType::TableInterior(_interior) => {
             // find next page
             // recursively call self
 
             panic!("Not implemented")
         }
         _ => panic!("Not implemented"),
-    }
+    };
 }
 
 pub fn create_record(row: Vec<Column>) -> Vec<u8> {

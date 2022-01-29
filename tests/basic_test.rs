@@ -50,7 +50,7 @@ fn multiple_records() {
 
     let row_hashs = vec![simple_record("fred", 1), simple_record("george", 2)];
 
-    database.insert_records("table1".to_string(), row_hashs);
+    database.insert_records("table1".to_string(), row_hashs).unwrap();
 
     let output = database.select_all_records("table1".to_string()).unwrap();
 

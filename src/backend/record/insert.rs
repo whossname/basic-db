@@ -5,13 +5,21 @@ use super::super::page;
 use std::mem;
 
 pub fn insert_record(database: &mut Database, record: Vec<u8>, rootpage: u32) {
+    // TODO rootpage is not always page_number
+    let page_number = rootpage;
+
+    // check cache
+    let mut page = match database.page_cache.remove(&page_number) {
+        None => database.read_page(page_number).unwrap(),
+        Some(page) => page,
+    };
+
+    println!("{:?}", page);
+
     // find appropriate page for insert
 
-    let page_number = rootpage;
-    let mut page = database.read_page(page_number).unwrap();
-
     match page.page_type {
-        PageType::TableLeaf(ref leaf) => {
+        PageType::TableLeaf(ref mut leaf) => {
             // check if there is enough space
             // if not, do we need to split the leaf or add an overflow page?
 
@@ -57,6 +65,9 @@ pub fn insert_record(database: &mut Database, record: Vec<u8>, rootpage: u32) {
                 cell_content_start_offset..cell_content_start_offset + 2,
                 cell_pointer_bytes,
             );
+
+            leaf.cell_count = cell_count;
+            leaf.cell_content_start = cell_pointer;
 
             database.page_cache.insert(page_number, page);
         }

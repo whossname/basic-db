@@ -1,7 +1,4 @@
-use self::page::Page;
-use self::page::PageType;
 use super::database::{Column, Database};
-use super::page;
 use std::error;
 
 // serialise integer
@@ -29,7 +26,6 @@ pub fn create_record(row: Vec<Column>) -> Vec<u8> {
 pub fn insert_record(database: &mut Database, record: Vec<u8>, rootpage: u32) {
     insert::insert_record(database, record, rootpage)
 }
-
 
 // max length of a varint is 9 bytes
 fn varint_length(int: i128) -> u8 {

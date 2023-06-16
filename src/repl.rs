@@ -1,6 +1,7 @@
 use rustyline::error::ReadlineError;
-use rustyline::Editor;
+use rustyline::{DefaultEditor, Editor, Result};
 
+use rustyline::history::FileHistory;
 use sql;
 
 enum ReplState {
@@ -10,7 +11,7 @@ enum ReplState {
 
 pub fn run() {
     // `()` can be used when no completer is required
-    let mut rl = Editor::<()>::new();
+    let mut rl = DefaultEditor::new().unwrap();
     if rl.load_history("history.txt").is_err() {
         println!("No previous history.");
     }
@@ -37,10 +38,11 @@ pub fn run() {
             }
         }
     }
-    rl.save_history("history.txt").unwrap();
+    #[cfg(feature = "with-file-history")]
+    rl.save_history("history.txt");
 }
 
-fn user_input(line: String, rl: &mut Editor<()>) -> ReplState {
+fn user_input(line: String, rl: &mut Editor<(), FileHistory>) -> ReplState {
     let first_char = line.chars().next();
     match first_char {
         None => ReplState::Continue,

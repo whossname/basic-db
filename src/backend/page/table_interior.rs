@@ -1,0 +1,48 @@
+use super::super::database::Database;
+use super::{Page, PageType};
+use serialise;
+use std::error;
+use std::io::prelude::*;
+use std::io::SeekFrom;
+use std::io::Write;
+use std::mem;
+
+#[derive(Debug)]
+pub struct TableInterior {
+    freeblock_index: u16,
+    cell_count: u16,
+    cell_content_start: u16,
+    fragmented_bytes_count: u8,
+    right_pointer: u32,
+}
+
+impl TableInterior {
+    pub fn free_space(self, header_start: usize) -> u16 {
+        self.cell_content_start - self.cell_count * 2 - header_start as u16
+    }
+}
+
+pub fn create_page(database: &mut Database) -> Result<(), Box<dyn error::Error>> {
+    let mut page = vec![0u8; database.page_size as usize];
+    let page_type: u8 = 13;
+    serialise_integer!(page_type, &mut 0, &mut page);
+    // position at end of file
+    database.file.seek(SeekFrom::End(0))?;
+    database.file.write_all(&page)?;
+    Ok(())
+}
+
+pub fn read_page(page: Vec<u8>, header_start: usize) -> Result<Page, Box<dyn error::Error>> {
+    let table_interior = TableInterior {
+        freeblock_index: serialise::to_integer(&page[header_start + 1..header_start + 3])?,
+        cell_count: serialise::to_integer(&page[header_start + 3..header_start + 5])?,
+        cell_content_start: serialise::to_integer(&page[header_start + 5..header_start + 7])?,
+        fragmented_bytes_count: serialise::to_integer(&page[header_start + 7..header_start + 8])?,
+        right_pointer: serialise::to_integer(&page[header_start + 8..header_start + 12])?,
+    };
+
+    Ok(Page {
+        page_type: PageType::TableInterior(table_interior),
+        data: page,
+    })
+}

@@ -126,14 +126,17 @@ impl Database {
         let column_filter = |mut row: Vec<Column>| row.drain(2..).collect();
 
         let table = record::select_records(self, 1, record_filter, column_filter)?;
-        let columns = table.first().unwrap();
 
-        match columns.as_slice() {
-            [Column::Integer(page_number), Column::Blob(data)] => {
-                let columns = bincode::deserialize::<Vec<(String, ColumnType)>>(data);
-                Ok((*page_number as u32, columns.unwrap()))
+        if let Some(columns) = table.first() {
+            match columns.as_slice() {
+                [Column::Integer(page_number), Column::Blob(data)] => {
+                    let columns = bincode::deserialize::<Vec<(String, ColumnType)>>(data);
+                    Ok((*page_number as u32, columns.unwrap()))
+                }
+                _ => panic!("Table columns stored incorrectly"),
             }
-            _ => panic!("Table columns stored incorrectly"),
+        } else {
+            panic!("table {} does not exist", &table_name[..])
         }
     }
 
@@ -163,8 +166,10 @@ impl Database {
     }
 }
 
-fn create_new_database(file_path: &Path) -> Result<Database, Box<dyn error::Error>> {
-    let page_size = u16::try_from(sysconf::page::pagesize())?;
+pub fn create_new_database(
+    file_path: &Path,
+    page_size: u16,
+) -> Result<Database, Box<dyn error::Error>> {
     let page_count: u32 = 1;
 
     let mut page = vec![0u8; page_size as usize];
@@ -227,6 +232,7 @@ pub fn load(filename: &String) -> Result<Database, Box<dyn error::Error>> {
     if file_path.exists() {
         load_existing_database(file_path)
     } else {
-        create_new_database(file_path)
+        let page_size = u16::try_from(sysconf::page::pagesize())?;
+        create_new_database(file_path, page_size)
     }
 }

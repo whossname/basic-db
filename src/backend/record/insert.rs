@@ -1,4 +1,3 @@
-use self::page::Page;
 use self::page::PageType;
 use super::super::database::{Column, Database};
 use super::super::page;
@@ -14,14 +13,14 @@ pub fn insert_record(database: &mut Database, record: Vec<u8>, rootpage: u32) {
         Some(page) => page,
     };
 
-    println!("{:?}", page);
+    // println!("{:?}", page);
 
     // find appropriate page for insert
 
     match page.page_type {
         PageType::TableLeaf(ref mut leaf) => {
             // check if there is enough space
-            // if not, do we need to split the leaf or add an overflow page?
+            // TODO if not, do we need to split the leaf or add an overflow page?
 
             let record_size = record.len() as u16;
             let cell_pointer = if leaf.cell_content_start == 0 {
